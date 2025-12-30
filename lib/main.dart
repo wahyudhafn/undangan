@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'config/supabase_config.dart';
+import 'pages/auth/login_page.dart';
 import 'pages/dashboard_page.dart';
 
 void main() async {
@@ -27,7 +28,9 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.indigo,
         useMaterial3: true,
       ),
-      home: const DashboardPage(),
+      home: Supabase.instance.client.auth.currentSession == null
+          ? const LoginPage()
+          : const DashboardPage(),
     );
   }
 }

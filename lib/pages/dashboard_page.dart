@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/guest.dart';
 import '../services/guest_service.dart';
 import 'guest_list_page.dart';
 import 'add_guest_page.dart';
+import 'auth/login_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -15,7 +17,7 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   final service = GuestService();
-  late Future<List<Guest>> futureGuests;
+  Future<List<Guest>>? futureGuests;
 
   static const Color cream = Color(0xFFFFF8EE);
   static const Color gold = Color(0xFFC9A24D);
@@ -24,17 +26,50 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    loadData();
+    _checkSessionAndLoad();
   }
 
-  void loadData() {
-    futureGuests = service.getGuests();
+  // =====================
+  // CEK SESSION LOGIN
+  // =====================
+  void _checkSessionAndLoad() {
+    final session = Supabase.instance.client.auth.currentSession;
+
+    if (session == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginPage()),
+          (route) => false,
+        );
+      });
+      return;
+    }
+
+    setState(() {
+      futureGuests = service.getGuests();
+    });
   }
 
   void refresh() {
     setState(() {
-      loadData();
+      futureGuests = service.getGuests();
     });
+  }
+
+  // =====================
+  // LOGOUT
+  // =====================
+  Future<void> logout() async {
+    await Supabase.instance.client.auth.signOut();
+
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+      (route) => false,
+    );
   }
 
   @override
@@ -53,6 +88,12 @@ class _DashboardPageState extends State<DashboardPage> {
             fontWeight: FontWeight.bold,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: darkGold),
+            onPressed: logout,
+          ),
+        ],
       ),
 
       floatingActionButton: FloatingActionButton(
@@ -61,148 +102,157 @@ class _DashboardPageState extends State<DashboardPage> {
         onPressed: () async {
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => AddGuestPage()),
+            MaterialPageRoute(builder: (_) => const AddGuestPage()),
           );
           refresh();
         },
       ),
 
-      body: FutureBuilder<List<Guest>>(
-        future: futureGuests,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: futureGuests == null
+          ? const Center(child: CircularProgressIndicator())
+          : FutureBuilder<List<Guest>>(
+              future: futureGuests,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-          if (!snapshot.hasData) {
-            return const Center(child: Text("Gagal mengambil data"));
-          }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text('Error: ${snapshot.error}'),
+                  );
+                }
 
-          final guests = snapshot.data!;
-          final totalUndangan = guests.length;
-          final totalHadir = guests.where((g) => g.hadir).length;
-          final progress =
-              totalUndangan == 0 ? 0.0 : totalHadir / totalUndangan;
+                if (!snapshot.hasData) {
+                  return const Center(child: Text("Gagal mengambil data"));
+                }
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ===== HEADER =====
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    gradient:
-                        const LinearGradient(colors: [darkGold, gold]),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Text(
-                    "Selamat Datang di Acara Kami",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+                final guests = snapshot.data!;
+                final totalUndangan = guests.length;
+                final totalHadir = guests.where((g) => g.hadir).length;
+                final progress = totalUndangan == 0
+                    ? 0.0
+                    : totalHadir / totalUndangan;
 
-                const SizedBox(height: 20),
-
-                dashboardCard(
-                  "Tamu Hadir",
-                  "$totalHadir Orang",
-                  Icons.check_circle,
-                  gold,
-                ),
-
-                dashboardCard(
-                  "Total Undangan",
-                  "$totalUndangan Undangan",
-                  Icons.people,
-                  darkGold,
-                ),
-
-                const SizedBox(height: 24),
-
-                // ===== PROGRESS =====
-                const Text(
-                  "Progress Kehadiran",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: darkGold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 14,
-                    backgroundColor: Colors.grey.shade300,
-                    valueColor:
-                        const AlwaysStoppedAnimation(gold),
-                  ),
-                ),
-
-                const SizedBox(height: 6),
-                Text(
-                  "$totalHadir dari $totalUndangan undangan",
-                  style: const TextStyle(color: darkGold),
-                ),
-
-                const SizedBox(height: 30),
-
-                // ===== GRAFIK =====
-                const Text(
-                  "Grafik Jam Kedatangan",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: darkGold,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                grafikJamKedatangan(guests),
-
-                const SizedBox(height: 30),
-
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: gold,
-                      foregroundColor: Colors.white,
-                      padding:
-                          const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: const Text(
-                      "Lihat Buku Tamu",
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    onPressed: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const GuestListPage(),
+                return SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // HEADER
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [darkGold, gold],
+                          ),
+                          borderRadius: BorderRadius.circular(18),
                         ),
-                      );
+                        child: const Text(
+                          "Selamat Datang di Acara Kami",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
 
-                      if (result == true) {
-                        refresh();
-                      }
-                    },
+                      const SizedBox(height: 20),
+
+                      dashboardCard(
+                        "Tamu Hadir",
+                        "$totalHadir Orang",
+                        Icons.check_circle,
+                        gold,
+                      ),
+
+                      dashboardCard(
+                        "Total Undangan",
+                        "$totalUndangan Undangan",
+                        Icons.people,
+                        darkGold,
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // PROGRESS
+                      const Text(
+                        "Progress Kehadiran",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: darkGold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 14,
+                          backgroundColor: Colors.grey.shade300,
+                          valueColor:
+                              const AlwaysStoppedAnimation(gold),
+                        ),
+                      ),
+
+                      const SizedBox(height: 6),
+                      Text(
+                        "$totalHadir dari $totalUndangan undangan",
+                        style: const TextStyle(color: darkGold),
+                      ),
+
+                      const SizedBox(height: 30),
+
+                      // GRAFIK
+                      const Text(
+                        "Grafik Jam Kedatangan",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: darkGold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      grafikJamKedatangan(guests),
+
+                      const SizedBox(height: 30),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: gold,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: const Text(
+                            "Lihat Buku Tamu",
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const GuestListPage(),
+                              ),
+                            );
+
+                            if (result == true) {
+                              refresh();
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 }
